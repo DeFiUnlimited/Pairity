@@ -1,0 +1,64 @@
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+
+contract AgreementContract is ERC1155 {
+    uint256 public agreementId;
+    mapping(uint256 => Agreement) public agreements;
+
+    // the oracle's and AI's addresses
+    address public oracle;
+    address public agreementCreator;
+
+    struct Agreement {
+        address freelancer;
+        address client;
+        string agreement;
+        bool isFulfilled;
+        bool isDisputed;
+        uint256 amount;
+        bool oracleConfirmation;
+    }
+
+    constructor(address _oracle, address _agreementCreator) ERC1155("https://your-metadata-uri.com/{id}.json") {
+        oracle = _oracle;
+        agreementCreator = _agreementCreator;
+    }
+
+    function createAgreement(address _freelancer, address _client, string memory _agreement, uint256 _amount) public payable {
+        require(msg.value == _amount, "Please provide the correct amount for escrow.");
+
+        agreements[agreementId] = Agreement(_freelancer, _client, _agreement, false, false, msg.value, false);
+        _mint(_freelancer, agreementId, 1, "");
+        _mint(_client, agreementId, 1, "");
+        agreementId++;
+    }
+
+    function amendAgreement(uint256 _agreementId, string memory _newAgreement) public {
+        require(msg.sender == agreementCreator, "Only the agreement creator can amend the agreement.");
+        require(!agreements[_agreementId].isFulfilled, "The agreement has already been fulfilled.");
+        require(!agreements[_agreementId].isDisputed, "The agreement is under dispute.");
+        agreements[_agreementId].agreement = _newAgreement;
+    }
+
+    function fulfillAgreement(uint256 _agreementId) public {
+        require(msg.sender == agreements[_agreementId].freelancer || msg.sender == agreements[_agreementId].client, "Only the freelancer or client can fulfill the agreement.");
+        require(!agreements[_agreementId].isDisputed, "The agreement is under dispute.");
+        require(agreements[_agreementId].oracleConfirmation, "The terms of the agreement have not been confirmed by the oracle.");
+        agreements[_agreementId].isFulfilled = true;
+        payable(agreements[_agreementId].freelancer).transfer(agreements[_agreementId].amount);
+    }
+
+    function initiateDispute(uint256 _agreementId) public {
+        require(msg.sender == agreements[_agreementId].freelancer || msg.sender == agreements[_agreementId].client, "Only the freelancer or client can initiate a dispute.");
+        require(!agreements[_agreementId].isFulfilled, "The agreement has already been fulfilled.");
+        agreements[_agreementId].isDisputed = true;
+    }
+
+    function oracleConfirm(uint256 _agreementId) public {
+        require(msg.sender == oracle, "Only the oracle can confirm the terms of the agreement.");
+        agreements[_agreementId].oracleConfirmation = true;
+    }
+
+    // ... additional functions for resolving disputes ...
+}
