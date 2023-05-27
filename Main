@@ -16,8 +16,11 @@ contract AgreementContract is ERC1155 {
         string agreement;
         bool isFulfilled;
         bool isDisputed;
+        bool isAppealed;
         uint256 amount;
         bool oracleConfirmation;
+        uint256 disputeEndTime;
+        bool releaseFunds;
     }
 
     constructor(address _oracle, address _agreementCreator) ERC1155("https://your-metadata-uri.com/{id}.json") {
@@ -28,7 +31,7 @@ contract AgreementContract is ERC1155 {
     function createAgreement(address _freelancer, address _client, string memory _agreement, uint256 _amount) public payable {
         require(msg.value == _amount, "Please provide the correct amount for escrow.");
 
-        agreements[agreementId] = Agreement(_freelancer, _client, _agreement, false, false, msg.value, false);
+        agreements[agreementId] = Agreement(_freelancer, _client, _agreement, false, false, false, msg.value, false, 0, false);
         _mint(_freelancer, agreementId, 1, "");
         _mint(_client, agreementId, 1, "");
         agreementId++;
@@ -38,6 +41,7 @@ contract AgreementContract is ERC1155 {
         require(msg.sender == agreementCreator, "Only the agreement creator can amend the agreement.");
         require(!agreements[_agreementId].isFulfilled, "The agreement has already been fulfilled.");
         require(!agreements[_agreementId].isDisputed, "The agreement is under dispute.");
+        require(!agreements[_agreementId].isAppealed, "The agreement is already appealed.");
         agreements[_agreementId].agreement = _newAgreement;
     }
 
@@ -46,74 +50,62 @@ contract AgreementContract is ERC1155 {
         require(!agreements[_agreementId].isDisputed, "The agreement is under dispute.");
         require(agreements[_agreementId].oracleConfirmation, "The terms of the agreement have not been confirmed by the oracle.");
         agreements[_agreementId].isFulfilled = true;
+        agreements[_agreementId].releaseFunds = true;
+        agreements[_agreementId].disputeEndTime = 0; // Reset the dispute end time
         payable(agreements[_agreementId].freelancer).transfer(agreements[_agreementId].amount);
     }
 
     function initiateDispute(uint256 _agreementId) public {
         require(msg.sender == agreements[_agreementId].freelancer || msg.sender == agreements[_agreementId].client, "Only the freelancer or client can initiate a dispute.");
         require(!agreements[_agreementId].isFulfilled, "The agreement has already been fulfilled.");
+        require(!agreements[_agreementId].isDisputed, "The agreement is under dispute.");
         agreements[_agreementId].isDisputed = true;
-    }
-
-    function oracleConfirm(uint256 _agreementId) public {
-        require(msg.sender == oracle, "Only the oracle can confirm the terms of the agreement.");
-        agreements[_agreementId].oracleConfirmation = true;
-    }
-
-    function submitEvidence(uint256 _agreementId, string memory _evidence) public {
+        agreements[_agreementId].disputeEndTime = block.timestamp + 168 hours; // Set the dispute end time to 168 hours (1 week) from the current time
+        agreements[_agreementId].releaseFunds = false; // Set releaseFunds to false during the dispute period
+    } 
+    
+            function requestAppeal(uint256 _agreementId) public {
         require(agreements[_agreementId].isDisputed, "The agreement is not under dispute.");
-        // Store the evidence or perform necessary actions
-        // You can extend the Agreement struct to include an evidence field to store the evidence.
+        require(agreements[_agreementId].disputeEndTime > block.timestamp, "The dispute period has ended.");
+        require(!agreements[_agreementId].isAppealed, "The agreement is already appealed.");
+        agreements[_agreementId].isAppealed = true;
     }
 
-        function reviewEvidence(uint256 _agreementId) public {
-        require(msg.sender == oracle, "Only the oracle can review the evidence.");
+    function finalizeAppeal(uint256 _agreementId, bool _isFavorableOutcome) public {
+        require(msg.sender == oracle, "Only the oracle can finalize the appeal.");
         require(agreements[_agreementId].isDisputed, "The agreement is not under dispute.");
-        
-        // Perform the necessary actions to review the evidence and make a determination
-        
-        // For example, you can update the Agreement struct with the determination:
-        agreements[_agreementId].isFulfilled = true; // or set it to false if the dispute is not resolved in favor of either party
-    }
+        require(agreements[_agreementId].isAppealed, "The agreement is not appealed.");
+        require(agreements[_agreementId].disputeEndTime > block.timestamp, "The dispute period has ended.");
 
-    function resolveDispute(uint256 _agreementId) public {
-        require(msg.sender == oracle, "Only the oracle can resolve the dispute.");
-        require(agreements[_agreementId].isDisputed, "The agreement is not under dispute.");
-        
-        // Perform any additional actions required to resolve the dispute
-        
-        // For example, you can release funds to the appropriate party based on the resolution:
-        if (agreements[_agreementId].isFulfilled) {
-            payable(agreements[_agreementId].freelancer).transfer(agreements[_agreementId].amount);
-        } else {
-            payable(agreements[_agreementId].client).transfer(agreements[_agreementId].amount);
-        }
-        
-        // Clear the dispute flag
+        // Perform the necessary actions to finalize the appeal and make a new determination
+        agreements[_agreementId].isFulfilled = _isFavorableOutcome;
+        agreements[_agreementId].releaseFunds = _isFavorableOutcome;
+
+        // Clear the dispute flag and the appeal flag
         agreements[_agreementId].isDisputed = false;
+        agreements[_agreementId].isAppealed = false;
+        agreements[_agreementId].disputeEndTime = 0; // Reset the dispute end time
     }
 
     function releaseFunds(uint256 _agreementId) public {
-        require(msg.sender == oracle, "Only the oracle can release funds.");
-        require(agreements[_agreementId].isDisputed, "The agreement is not under dispute.");
+        require(agreements[_agreementId].releaseFunds, "Funds cannot be released at this time.");
         require(agreements[_agreementId].isFulfilled, "The agreement is not fulfilled.");
-        
+
         // Release funds to the appropriate party
         payable(agreements[_agreementId].freelancer).transfer(agreements[_agreementId].amount);
-        
-        // Clear the dispute flag
-        agreements[_agreementId].isDisputed = false;
+
+        // Clear the releaseFunds flag
+        agreements[_agreementId].releaseFunds = false;
     }
 
     function refundFunds(uint256 _agreementId) public {
-        require(msg.sender == oracle, "Only the oracle can refund funds.");
-        require(agreements[_agreementId].isDisputed, "The agreement is not under dispute.");
+        require(agreements[_agreementId].releaseFunds, "Funds cannot be refunded at this time.");
         require(!agreements[_agreementId].isFulfilled, "The agreement is already fulfilled.");
-        
+
         // Refund funds to the client
         payable(agreements[_agreementId].client).transfer(agreements[_agreementId].amount);
-        
-        // Clear the dispute flag
-        agreements[_agreementId].isDisputed = false;
+
+        // Clear the releaseFunds flag
+        agreements[_agreementId].releaseFunds = false;
     }
 }
