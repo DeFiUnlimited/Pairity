@@ -60,5 +60,60 @@ contract AgreementContract is ERC1155 {
         agreements[_agreementId].oracleConfirmation = true;
     }
 
-    // ... additional functions for resolving disputes ...
+    function submitEvidence(uint256 _agreementId, string memory _evidence) public {
+        require(agreements[_agreementId].isDisputed, "The agreement is not under dispute.");
+        // Store the evidence or perform necessary actions
+        // You can extend the Agreement struct to include an evidence field to store the evidence.
+    }
+
+        function reviewEvidence(uint256 _agreementId) public {
+        require(msg.sender == oracle, "Only the oracle can review the evidence.");
+        require(agreements[_agreementId].isDisputed, "The agreement is not under dispute.");
+        
+        // Perform the necessary actions to review the evidence and make a determination
+        
+        // For example, you can update the Agreement struct with the determination:
+        agreements[_agreementId].isFulfilled = true; // or set it to false if the dispute is not resolved in favor of either party
+    }
+
+    function resolveDispute(uint256 _agreementId) public {
+        require(msg.sender == oracle, "Only the oracle can resolve the dispute.");
+        require(agreements[_agreementId].isDisputed, "The agreement is not under dispute.");
+        
+        // Perform any additional actions required to resolve the dispute
+        
+        // For example, you can release funds to the appropriate party based on the resolution:
+        if (agreements[_agreementId].isFulfilled) {
+            payable(agreements[_agreementId].freelancer).transfer(agreements[_agreementId].amount);
+        } else {
+            payable(agreements[_agreementId].client).transfer(agreements[_agreementId].amount);
+        }
+        
+        // Clear the dispute flag
+        agreements[_agreementId].isDisputed = false;
+    }
+
+    function releaseFunds(uint256 _agreementId) public {
+        require(msg.sender == oracle, "Only the oracle can release funds.");
+        require(agreements[_agreementId].isDisputed, "The agreement is not under dispute.");
+        require(agreements[_agreementId].isFulfilled, "The agreement is not fulfilled.");
+        
+        // Release funds to the appropriate party
+        payable(agreements[_agreementId].freelancer).transfer(agreements[_agreementId].amount);
+        
+        // Clear the dispute flag
+        agreements[_agreementId].isDisputed = false;
+    }
+
+    function refundFunds(uint256 _agreementId) public {
+        require(msg.sender == oracle, "Only the oracle can refund funds.");
+        require(agreements[_agreementId].isDisputed, "The agreement is not under dispute.");
+        require(!agreements[_agreementId].isFulfilled, "The agreement is already fulfilled.");
+        
+        // Refund funds to the client
+        payable(agreements[_agreementId].client).transfer(agreements[_agreementId].amount);
+        
+        // Clear the dispute flag
+        agreements[_agreementId].isDisputed = false;
+    }
 }
